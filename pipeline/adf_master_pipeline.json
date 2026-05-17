@@ -1,0 +1,105 @@
+{
+  "name": "pl_master_av_data_pipeline",
+  "properties": {
+    "description": "Master orchestration pipeline for AV Data Processing Platform. Reads source config and triggers child pipelines for each data source.",
+    "activities": [
+      {
+        "name": "LookupSourceConfig",
+        "description": "Read list of active data sources from config table",
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "AzureSqlSource",
+            "sqlReaderQuery": "SELECT source_id, source_name, source_path, file_format, target_table, source_type FROM config.pipeline_sources WHERE is_active = 1",
+            "queryTimeout": "02:00:00"
+          },
+          "dataset": { "referenceName": "ds_sql_config_db", "type": "DatasetReference" },
+          "firstRowOnly": false
+        }
+      },
+      {
+        "name": "ForEachSource",
+        "description": "Iterate over each active source and trigger ingestion child pipeline",
+        "type": "ForEach",
+        "dependsOn": [{ "activity": "LookupSourceConfig", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "items": { "value": "@activity('LookupSourceConfig').output.value", "type": "Expression" },
+          "isSequential": false,
+          "batchCount": 5,
+          "activities": [
+            {
+              "name": "ExecuteIngestionPipeline",
+              "type": "ExecutePipeline",
+              "typeProperties": {
+                "pipeline": { "referenceName": "pl_sensor_ingestion_child", "type": "PipelineReference" },
+                "parameters": {
+                  "sourceId"    : { "value": "@item().source_id", "type": "Expression" },
+                  "sourcePath"  : { "value": "@item().source_path", "type": "Expression" },
+                  "fileFormat"  : { "value": "@item().file_format", "type": "Expression" },
+                  "targetTable" : { "value": "@item().target_table", "type": "Expression" },
+                  "sourceType"  : { "value": "@item().source_type", "type": "Expression" }
+                },
+                "waitOnCompletion": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "TriggerSilverTransformation",
+        "description": "After all sources ingested, trigger Silver transformation notebook",
+        "type": "DatabricksNotebook",
+        "dependsOn": [{ "activity": "ForEachSource", "dependencyConditions": ["Succeeded"] }],
+        "linkedServiceName": { "referenceName": "ls_databricks", "type": "LinkedServiceReference" },
+        "typeProperties": {
+          "notebookPath": "/Shared/av-platform/02_silver_transformation",
+          "baseParameters": {
+            "run_date": { "value": "@formatDateTime(utcnow(), 'yyyy-MM-dd')", "type": "Expression" }
+          }
+        }
+      },
+      {
+        "name": "TriggerQualityValidation",
+        "type": "DatabricksNotebook",
+        "dependsOn": [{ "activity": "TriggerSilverTransformation", "dependencyConditions": ["Succeeded"] }],
+        "linkedServiceName": { "referenceName": "ls_databricks", "type": "LinkedServiceReference" },
+        "typeProperties": {
+          "notebookPath": "/Shared/av-platform/03_quality_validation"
+        }
+      },
+      {
+        "name": "TriggerGoldAggregation",
+        "type": "DatabricksNotebook",
+        "dependsOn": [{ "activity": "TriggerQualityValidation", "dependencyConditions": ["Succeeded"] }],
+        "linkedServiceName": { "referenceName": "ls_databricks", "type": "LinkedServiceReference" },
+        "typeProperties": {
+          "notebookPath": "/Shared/av-platform/04_gold_aggregation"
+        }
+      },
+      {
+        "name": "SendFailureAlert",
+        "description": "Send email alert on any pipeline failure",
+        "type": "WebActivity",
+        "dependsOn": [
+          { "activity": "TriggerGoldAggregation", "dependencyConditions": ["Failed"] },
+          { "activity": "TriggerSilverTransformation", "dependencyConditions": ["Failed"] },
+          { "activity": "TriggerQualityValidation", "dependencyConditions": ["Failed"] }
+        ],
+        "typeProperties": {
+          "url": "@variables('alertWebhookUrl')",
+          "method": "POST",
+          "body": {
+            "pipeline"  : "@pipeline().Pipeline",
+            "runId"     : "@pipeline().RunId",
+            "status"    : "FAILED",
+            "timestamp" : "@utcnow()"
+          }
+        }
+      }
+    ],
+    "variables": {
+      "alertWebhookUrl": { "type": "String", "defaultValue": "" }
+    },
+    "annotations": ["av-platform", "orchestration", "master-pipeline"]
+  }
+}
