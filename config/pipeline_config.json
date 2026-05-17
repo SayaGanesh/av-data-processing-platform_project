@@ -1,0 +1,70 @@
+{
+  "pipeline_sources": [
+    {
+      "source_id": 1,
+      "source_name": "lidar_sensor_logs",
+      "source_path": "abfss://staging@<storage>.dfs.core.windows.net/lidar/",
+      "file_format": "json",
+      "target_table": "sensor_logs/lidar",
+      "source_type": "sensor_log",
+      "is_active": true,
+      "schedule": "0 2 * * *"
+    },
+    {
+      "source_id": 2,
+      "source_name": "camera_image_metadata",
+      "source_path": "abfss://staging@<storage>.dfs.core.windows.net/camera_metadata/",
+      "file_format": "json",
+      "target_table": "image_metadata/camera",
+      "source_type": "image_metadata",
+      "is_active": true,
+      "schedule": "0 2 * * *"
+    },
+    {
+      "source_id": 3,
+      "source_name": "annotation_tool_a_outputs",
+      "source_path": "abfss://staging@<storage>.dfs.core.windows.net/annotations/tool_a/",
+      "file_format": "json",
+      "target_table": "annotation_outputs/tool_a",
+      "source_type": "annotation",
+      "is_active": true,
+      "schedule": "0 3 * * *"
+    },
+    {
+      "source_id": 4,
+      "source_name": "annotation_tool_b_outputs",
+      "source_path": "abfss://staging@<storage>.dfs.core.windows.net/annotations/tool_b/",
+      "file_format": "csv",
+      "target_table": "annotation_outputs/tool_b",
+      "source_type": "annotation",
+      "is_active": true,
+      "schedule": "0 3 * * *"
+    },
+    {
+      "source_id": 5,
+      "source_name": "gps_track_logs",
+      "source_path": "abfss://staging@<storage>.dfs.core.windows.net/gps/",
+      "file_format": "parquet",
+      "target_table": "sensor_logs/gps",
+      "source_type": "sensor_log",
+      "is_active": true,
+      "schedule": "0 2 * * *"
+    }
+  ],
+  "delta_tables": {
+    "bronze_base_path"    : "abfss://bronze@<storage>.dfs.core.windows.net",
+    "silver_base_path"    : "abfss://silver@<storage>.dfs.core.windows.net",
+    "gold_base_path"      : "abfss://gold@<storage>.dfs.core.windows.net",
+    "quarantine_base_path": "abfss://quarantine@<storage>.dfs.core.windows.net"
+  },
+  "databricks": {
+    "workspace_url"      : "https://<workspace>.azuredatabricks.net",
+    "notebook_base_path" : "/Shared/av-platform",
+    "job_cluster_config" : {
+      "spark_version"    : "13.3.x-scala2.12",
+      "node_type_id"     : "Standard_DS3_v2",
+      "num_workers"      : 4,
+      "auto_termination_minutes": 30
+    }
+  }
+}
